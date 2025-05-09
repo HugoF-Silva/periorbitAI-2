@@ -5,10 +5,9 @@ In this repo you will find a python script (run_periorbitAI.py) to segment a col
 
 It takes two inputs a root directory name and a directory name containing all photographs:
 
-<pre>
-python run_periorbitAI.py root_directory name_of_photo_directory
-</pre>
-
+```
+python run_periorbitAI.py <root_directory> <name_of_photo_dir_inside_root>
+```
   
 Example:
 
@@ -32,47 +31,38 @@ We provide an example photograph in "photos" and the output for this photo in "e
 
 
 
-
-
-
-# Citation
-Please cite this paper when using this repo:
-
-Alexandra Van Brummen, Julia P. Owen, Theodore Spaide, Colin Froines, Randy Lu, Megan Lacy, Marian Blazes, Emily Li, Cecilia S. Lee, Aaron Y. Lee, Matthew Zhang,
-PeriorbitAI: Artificial intelligence automation of eyelid and periorbital measurements, American Journal of Ophthalmology, 2021
-
-
-
-
-
-
-
 # Installation
+We recommend Python 3.8 usage.
+
 You must install the following Python packages:
-
-pytorch (1.4.0)
-
-scipy
-
-scikit-image
-
-numpy
-
-torchvision
-
-psd_tools
-
-imutils
-
-cv2
-
-<pre>
-conda install pytorch=1.4.0 scipy=1.4.1 scikit-image=0.16.2 numpy=1.18.1 torchvision=0.5.0 psd-tools=1.8.38 imutils=0.5.3
-pip install opencv-python
-</pre>
+* pytorch (1.4.0)
+* scipy
+* scikit-image
+* numpy
+* torchvision
+* psd_tools
+* imutils
+* cv2
 
 
-Donwloading the repo
+run `nvidia-smi` on terminal to see your CUDA version.
+
+#### Using (linux or wsl) and (CUDA Version >= 10.1)?  that:
+
+```
+pip install torch==1.4.0 torchvision==0.5.0 --find-links https://download.pytorch.org/whl/cu101/torch_stable.html
+```
+```
+pip install scipy==1.4.1 scikit-image==0.16.2 numpy==1.18.1 imutils==0.5.3 psd-tools==1.8.38 opencv-python
+```
+
+```
+sudo apt install -y libgl1-mesa-glx libglib2.0-0
+```
+
+---
+
+#### Donwloading the repo
 Due to the size of the segmentation model (>100MB) this repo has to be downloaded a release.  Please follow these instructions:
 
 1.  Go to https://github.com/uw-biomedical-ml/periorbitAI
@@ -82,6 +72,14 @@ Due to the size of the segmentation model (>100MB) this repo has to be downloade
 5.  Unzip/untar the source code repository (this may be needed: tar -xf v1.0.tar.gz --no-same-owner)
 6.  Place PSPNet_best into the code repo
 7.  You should now be able to run from within the code repo: 
-<pre>
-  python run_periorbitAI.py root_directory name_of_photo_directory
-</pre>
+
+```
+  python run_periorbitAI.py <root_directory> <name_of_photo_dir_inside_root>
+```
+
+# Additional context
+This is a repository derived of periorbitAI [1], whose authors names are not involved or endorsed in anything resulted by this periorbitAI-2.
+
+# Citation
+[1] Alexandra Van Brummen, Julia P. Owen, Theodore Spaide, Colin Froines, Randy Lu, Megan Lacy, Marian Blazes, Emily Li, Cecilia S. Lee, Aaron Y. Lee, Matthew Zhang,
+PeriorbitAI: Artificial intelligence automation of eyelid and periorbital measurements, American Journal of Ophthalmology, 2021

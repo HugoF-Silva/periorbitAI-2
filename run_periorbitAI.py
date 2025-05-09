@@ -12,7 +12,6 @@ import skimage
 import skimage.feature
 import skimage.viewer
 import math
-import imutils
 
 def cleanupiris(iris):
     #return iris with only the biggest cluster
@@ -300,13 +299,21 @@ with open(rootdir + measure_filename,'w') as fout:
     line = ['subj','right_MRD1','right_MRD2','right_LCH','right_MCH','right_LBH','right_MBH','left_MRD1','left_MRD2','left_LCH','left_MCH','left_LBH','left_MBH','MID','LID']
     fout.write("%s\n" % ",".join(line))
     
-for file in glob.glob(imagedir + '/*JPG'):
+
+image_files = [f for f in glob.glob(imagedir + '/*') if os.path.splitext(f)[1].lower() in ['.jpg', '.jpeg']]
+
+for file in image_files:
     #this will may need to be changed to fit your OS
     subj = os.path.split(file)[-1].split('.')[0]
     print(subj)
                  
     #load in image and get segmentation
     img = cv2.imread(file)
+    
+    if img is None or img.shape[2] != 3:
+        print(f"Skipping {file} due to invalid color channels")
+        continue
+
     face = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     if img.shape != (4000,6000,3):
         print('skipping ' + 'subj')
