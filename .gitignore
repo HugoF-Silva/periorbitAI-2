@@ -139,4 +139,10 @@ cython_debug/
 
 # Data
 /photos
+/photos2
+/periorbitAI_figures
+/out
+/eyes
 periorbitAI_measures.csv
+
+PSPNet_best

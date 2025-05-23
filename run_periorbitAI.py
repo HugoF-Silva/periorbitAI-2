@@ -9,9 +9,10 @@ import matplotlib.patches as patches
 from scipy import optimize
 import math
 import skimage
-import skimage.feature
-import skimage.viewer
 import math
+from typing import Optional, Tuple
+from face_cropper import FaceCropper
+import skimage.feature
 
 def cleanupiris(iris):
     #return iris with only the biggest cluster
@@ -281,265 +282,348 @@ def getscleralshow(xc,yc,iris,ap):
         sup_ss = 0
     return inf_ss,sup_ss
 
-R_right_all = []
-R_left_all = []
-correct_tilt = 1
-
-rootdir = sys.argv[1]
-imagedir = rootdir + '/' + sys.argv[2]
-reportdir = rootdir + '/periorbitAI_figures'
-print(rootdir)
-print(imagedir)
-print(reportdir)
-if not os.path.exists(reportdir):
-    os.makedirs(reportdir)
-
-measure_filename = '/periorbitAI_measures.csv'
-with open(rootdir + measure_filename,'w') as fout:
-    line = ['subj','right_MRD1','right_MRD2','right_LCH','right_MCH','right_LBH','right_MBH','left_MRD1','left_MRD2','left_LCH','left_MCH','left_LBH','left_MBH','MID','LID']
-    fout.write("%s\n" % ",".join(line))
+# Integration function for your existing pipeline
+def preprocess_with_mediapipe(image_path: str, face_cropper: FaceCropper) -> Optional[np.ndarray]:
+    """
+    Preprocess an image file using MediaPipe for dynamic face cropping.
     
-
-image_files = [f for f in glob.glob(imagedir + '/*') if os.path.splitext(f)[1].lower() in ['.jpg', '.jpeg']]
-
-for file in image_files:
-    #this will may need to be changed to fit your OS
-    subj = os.path.split(file)[-1].split('.')[0]
-    print(subj)
-                 
-    #load in image and get segmentation
-    img = cv2.imread(file)
-    
-    if img is None or img.shape[2] != 3:
-        print(f"Skipping {file} due to invalid color channels")
-        continue
-
-    face = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    if img.shape != (4000,6000,3):
-        print('skipping ' + 'subj')
+    Args:
+        image_path: Path to the input image
+        face_cropper: FaceCropper instance
         
-    face = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    net = ni.load_net()
-    seg_arr = ni.apply_net(net, face, argmax_output = True)[0,:,:]
+    Returns:
+        Preprocessed image ready for your model (4000x6000), or None if processing fails
+    """
+    # Read image
+    img = cv2.imread(image_path)
+    if img is None:
+        print(f"Failed to read image: {image_path}")
+        return None
+    
+    # Process with MediaPipe
+    processed = face_cropper.process_image(img)
+    
+    if processed is None:
+        print(f"Failed to process image: {image_path}")
+        return None
+    
+    # Convert to RGB for your model
+    processed_rgb = cv2.cvtColor(processed, cv2.COLOR_BGR2RGB)
+    
+    return processed_rgb
 
-    ap_right, ap_left, brow_right, brow_left, iris_right, \
-    iris_left, face_right, face_left, seg_arr_right, seg_arr_left = \
-    getleftright(seg_arr, face)
-    iris_right = cleanupiris(iris_right)
-    iris_left = cleanupiris(iris_left)
-    ap_right = cleanupap(ap_right)
-    ap_left = cleanupap(ap_left)
+
+# Example usage for integration with your existing code
+def integrate_with_existing_pipeline():
+    """
+    Example of how to integrate MediaPipe preprocessing with your existing code
+    """
+    R_right_all = []
+    R_left_all = []
+    correct_tilt = 1
+
+    rootdir = sys.argv[1]
+    imagedir = rootdir + '/' + sys.argv[2]
+    reportdir = rootdir + '/periorbitAI_figures'
+    print(rootdir)
+    print(imagedir)
+    print(reportdir)
+
+    if not os.path.exists(reportdir):
+        os.makedirs(reportdir)
+
+    measure_filename = '/periorbitAI_measures.csv'
+    with open(rootdir + measure_filename,'w') as fout:
+        line = ['subj','right_MRD1','right_MRD2','right_LCH','right_MCH','right_LBH','right_MBH','left_MRD1','left_MRD2','left_LCH','left_MCH','left_LBH','left_MBH','MID','LID']
+        fout.write("%s\n" % ",".join(line))
+
+    face_cropper = FaceCropper()
+
+    image_files = [f for f in glob.glob(imagedir + '/*') if os.path.splitext(f)[1].lower() in ['.jpg', '.jpeg']]
     
-    hidden_right, hidden_left, hiddenbrow_right, hiddenbrow_left = hiddeneye(iris_left,iris_right,ap_left,ap_right, brow_left,brow_right)
-         
-    if (hidden_left and hidden_right) or (sum(sum(iris_right+ap_right))<25000 and sum(sum(iris_left+ap_left))<25000):
-        print('skipping ' + 'subj')
-        overlay = np.zeros(face.shape, face.dtype)
-        overlay[seg_arr==1] = (0, 0, 255)
-        overlay[seg_arr==2] = (0, 255, 0)
-        overlay[seg_arr==3] = (255, 0, 0)
-        img_overlay = cv2.addWeighted(overlay, .5, face, 1, 0)
-        cv2.imwrite(reportdir + '/' + str(subj) + '_seg.png',cv2.cvtColor(img_overlay, cv2.COLOR_BGR2RGB))
-        cv2.imwrite(reportdir + '/' + str(subj) + '_orig.png',cv2.cvtColor(face, cv2.COLOR_BGR2RGB))
-        continue
-    
-    if correct_tilt == 1 and not(hidden_right | hidden_left):
-        face, seg_arr = rotatehorizontal(ap_right, ap_left, iris_right, iris_left, face, seg_arr)    
+    for file in image_files:
+        subj = os.path.split(file)[-1].split('.')[0]
+        print(f"Processing: {subj}")
+        
+        #load in image and get segmentation
+        img_original = cv2.imread(file)
+        
+        if img_original is None or img_original.shape[2] != 3:
+            print(f"Skipping {file} due to invalid color channels")
+            continue
+        
+        # NEW: Use MediaPipe to preprocess any size image to 4000x6000
+        img = face_cropper.process_image(img_original)
+        
+        if img is None:
+            print(f'skipping {subj} - face detection failed')
+            continue
+        
+        # Convert to RGB as your existing code expects
+        face = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        
+        net = ni.load_net()
+        seg_arr = ni.apply_net(net, face, argmax_output = True)[0,:,:]
+
         ap_right, ap_left, brow_right, brow_left, iris_right, \
-            iris_left, face_right, face_left, seg_arr_right, seg_arr_left = \
-                getleftright(seg_arr, face)
+        iris_left, face_right, face_left, seg_arr_right, seg_arr_left = \
+        getleftright(seg_arr, face)
         iris_right = cleanupiris(iris_right)
         iris_left = cleanupiris(iris_left)
         ap_right = cleanupap(ap_right)
         ap_left = cleanupap(ap_left)
         
-    if not hidden_right:
-        #get PFA
-        PFA_right = sum(sum(iris_right+ap_right))
-        #get x,y of iris centers
-        xc_right,yc_right,R_right = getiriscenter_ap(iris_right,ap_right)
-         #get x,y of MRD1 and MRD2 endpoints, and lengths of MRD1 and MRD2
-        x_mrd1_right, x_mrd2_right, mrd1_right, mrd2_right = getmrd1mrd2(xc_right,yc_right,iris_right+ap_right)
-        #get x,y of MCH and LCH
-        x_lch_right, y_lch_right, x_mch_right, y_mch_right = getmchlch(ap_right, False)
-        #get x,y of MCH and LCH
-        x_lch_right, y_lch_right, x_mch_right, y_mch_right = getmchlch(ap_right, False)
-        if not hiddenbrow_right:
-            #get x,y of brow at MCH and LCH
-            x_lbh_right, x_mbh_right, hiddenbrow_right = getbrowheight(x_lch_right,x_mch_right,y_lch_right,y_mch_right,brow_right,False)
-            lch_right =  x_lch_right - xc_right
-            lbh_right = xc_right - x_lbh_right
-            mch_right = x_mch_right - xc_right
-            mbh_right = xc_right - x_mbh_right
-        #get scleral show left and right
-        inf_ss_right,sup_ss_right = getscleralshow(xc_right,yc_right,iris_right,ap_right)
+        hidden_right, hidden_left, hiddenbrow_right, hiddenbrow_left = hiddeneye(iris_left,iris_right,ap_left,ap_right, brow_left,brow_right)
+            
+        if (hidden_left and hidden_right) or (sum(sum(iris_right+ap_right))<25000 and sum(sum(iris_left+ap_left))<25000):
+            print('skipping ' + 'subj')
+            overlay = np.zeros(face.shape, face.dtype)
+            overlay[seg_arr==1] = (0, 0, 255)
+            overlay[seg_arr==2] = (0, 255, 0)
+            overlay[seg_arr==3] = (255, 0, 0)
+            img_overlay = cv2.addWeighted(overlay, .5, face, 1, 0)
+            cv2.imwrite(reportdir + '/' + str(subj) + '_seg.png',cv2.cvtColor(img_overlay, cv2.COLOR_BGR2RGB))
+            cv2.imwrite(reportdir + '/' + str(subj) + '_orig.png',cv2.cvtColor(face, cv2.COLOR_BGR2RGB))
+            continue
+        
+        if correct_tilt == 1 and not(hidden_right | hidden_left):
+            face, seg_arr = rotatehorizontal(ap_right, ap_left, iris_right, iris_left, face, seg_arr)    
+            ap_right, ap_left, brow_right, brow_left, iris_right, \
+                iris_left, face_right, face_left, seg_arr_right, seg_arr_left = \
+                    getleftright(seg_arr, face)
+            iris_right = cleanupiris(iris_right)
+            iris_left = cleanupiris(iris_left)
+            ap_right = cleanupap(ap_right)
+            ap_left = cleanupap(ap_left)
     
-    if not hidden_left:
-        #get PFA
-        PFA_left = sum(sum(iris_left+ap_left))
-        #get x,y of iris centers
-        xc_left,yc_left,R_left = getiriscenter_ap(iris_left,ap_left)
-        #get x,y of MRD1 and MRD2 endpoints, and lengths of MRD1 and MRD2
-        x_mrd1_left, x_mrd2_left, mrd1_left, mrd2_left = getmrd1mrd2(xc_left,yc_left,iris_left+ap_left)
-        #get x,y of MCH and LCH
-        x_lch_left, y_lch_left, x_mch_left, y_mch_left = getmchlch(ap_left, True)
-        if not hiddenbrow_left:
-            #get x,y of brow at MCH and LCH
-            x_lbh_left, x_mbh_left, hiddenbrow_left = getbrowheight(x_lch_left,x_mch_left,y_lch_left,y_mch_left,brow_left,True)
-            lch_left =  x_lch_left - xc_left
-            lbh_left = xc_left - x_lbh_left
-            mch_left = x_mch_left - xc_left
-            mbh_left = xc_left - x_mbh_left
-        #get scleral show left and right
-        inf_ss_left,sup_ss_left = getscleralshow(xc_left,yc_left,iris_left,ap_left)
-    
-    
-    if not (hidden_left or hidden_right):
-        MID = y_mch_left+3000 - y_mch_right
-        LID = y_lch_left+3000 - y_lch_right
-    
-   
-    
-   
-    #calculate conversion from pix to mm
-    if not (hidden_left or hidden_right):
-        cf = 11.71/(R_left+R_right)
-    elif hidden_left and not hidden_right:
-       cf = 11.71/(2*R_right)
-    elif hidden_right and not hidden_left:
-        cf = 11.71/(2*R_left)
-    
-    overlay = np.zeros(face.shape, face.dtype)
-    overlay[seg_arr==1] = (0, 0, 255)
-    overlay[seg_arr==2] = (0, 255, 0)
-    overlay[seg_arr==3] = (255, 0, 0)
-    img_overlay = cv2.addWeighted(overlay, .5, face, 1, 0)
-    cv2.imwrite(reportdir + '/' + str(subj) + '_segmentation.png',cv2.cvtColor(img_overlay, cv2.COLOR_BGR2RGB))
-    
-    #make report plot
-    lw = 3
-    font_size = 30
-    
-    plt.figure(figsize=(40,10))
-    plt.imshow(face)
-    
-    clr1 = [10/256,158/256,115/256]
-    clr2 = 'r' #[183/256,50/256,57/256]
-    clr3 =  [255/256,140/256,0/256]
-    clr4 = [86/256,180/256,233/256]
-    
-    if not (hidden_left or hidden_right):
-        #calculate reference line through two irises
-        m = (xc_left - xc_right)/(yc_left+3000 - yc_right)
-        b = xc_left - (m * (yc_left+3000))
-        y1 = 0
-        y2 = 6000
-        x1 = m*y1 + b
-        x2 = m*y2 + b
-        #plot reference lines
-        plt.plot([y1,y2],[x1,x2],c=clr4,linewidth=lw,linestyle='--')
-    elif hidden_left and not hidden_right:
-        plt.plot([y_lch_right,y_mch_right],[xc_right,xc_right],c=clr4,linewidth=lw,linestyle='--')
-    elif hidden_right and not hidden_left:
-        plt.plot([y_lch_left+3000,y_mch_left+3000],[xc_left,xc_left],c=clr4,linewidth=lw,linestyle='--')
-    
-    if not hidden_right:    
-        #plot mrd1 and mrd2 lines
-        plt.plot([yc_right,yc_right],[xc_right,x_mrd1_right],c=clr1,linewidth=lw)
-        plt.plot([yc_right,yc_right],[xc_right,x_mrd2_right],c=clr2,linewidth=lw)
-        if not hiddenbrow_right:
-            #plot MCH and LCH
-            plt.plot([y_mch_right, y_mch_right], [x_mch_right,xc_right],c=clr2,linewidth=lw)
-            plt.plot([y_lch_right, y_lch_right], [x_lch_right,xc_right],c=clr2,linewidth=lw)
-            #plot MBH and LBH
-            plt.plot([y_mch_right, y_mch_right], [xc_right,x_mbh_right],c=clr1,linewidth=lw)
-            plt.plot([y_lch_right, y_lch_right], [xc_right,x_lbh_right],c=clr1,linewidth=lw)
-        plt.text(7500+200,0,'OD', fontsize=36,fontweight="bold")
-                  
-        plt.text(7000, 300, 'MRD1',c=clr1, fontsize=font_size,fontweight="bold")
-        plt.text(7500+200, 300, '= ' + str(round(cf*mrd1_right,2)) + 'mm',c=clr1, fontsize=font_size,fontweight="bold")
-        plt.text(7000, 600, 'MRD2',c=clr2, fontsize=font_size,fontweight="bold")
-        plt.text(7500+200, 600,'= ' + str(round(cf*mrd2_right,2)) + 'mm',c=clr2, fontsize=font_size,fontweight="bold")
-        if not hiddenbrow_right:
-            plt.text(7150, 900, 'LCH',c=clr2, fontsize=font_size,fontweight="bold")
-            plt.text(7500+200, 900,'= ' + str(round(cf*lch_right,2)) + 'mm',c=clr2, fontsize=font_size,fontweight="bold")
-                  
-            plt.text(7150, 1200, 'MCH',c=clr2, fontsize=font_size,fontweight="bold")
-            plt.text(7500+200, 1200,'= ' + str(round(cf*mch_right,2)) + 'mm',c=clr2, fontsize=font_size,fontweight="bold")
-                  
-            plt.text(7150, 1500, 'LBH',c=clr1, fontsize=font_size,fontweight="bold")
-            plt.text(7500+200, 1500,'= ' + str(round(cf*lbh_right,2)) + 'mm',c=clr1, fontsize=font_size,fontweight="bold")
-                  
-            plt.text(7150, 1800, 'MBH',c=clr1, fontsize=font_size,fontweight="bold")
-            plt.text(7500+200, 1800,'= ' + str(round(cf*mbh_right,2)) + 'mm',c=clr1, fontsize=font_size,fontweight="bold")
-                  
-            plt.text(7150, 2100, 'SSS',c=clr1, fontsize=font_size,fontweight="bold")
-            plt.text(7500+200, 2100,'= ' + str(round(cf*sup_ss_right,2)) + 'mm',c=clr1, fontsize=font_size,fontweight="bold")
-                  
-            plt.text(7150, 2400, 'ISS',c=clr2, fontsize=font_size,fontweight="bold")
-            plt.text(7500+200, 2400,'= ' + str(round(cf*inf_ss_right,2)) + 'mm',c=clr2, fontsize=font_size,fontweight="bold")
-                  
-          
-    if not hidden_left:
-        #plot mrd1 and mrd2 lines
-        plt.plot([yc_left+3000,yc_left+3000],[xc_left,x_mrd1_left],c=clr1,linewidth=lw)
-        plt.plot([yc_left+3000,yc_left+3000],[xc_left,x_mrd2_left],c=clr2,linewidth=lw)
-        if not hiddenbrow_left:
-            #plot MCH and LCH
-            plt.plot([y_mch_left+3000, y_mch_left+3000], [x_mch_left,xc_left],c=clr2,linewidth=lw)
-            plt.plot([y_lch_left+3000, y_lch_left+3000], [x_lch_left,xc_left],c=clr2,linewidth=lw)    
-            #plot MBH and LBH
-            plt.plot([y_mch_left+3000, y_mch_left+3000], [xc_left,x_mbh_left],c=clr1,linewidth=lw)
-            plt.plot([y_lch_left+3000, y_lch_left+3000], [xc_left,x_lbh_left],c=clr1,linewidth=lw)
+        if not hidden_right:
+            #get PFA
+            PFA_right = sum(sum(iris_right+ap_right))
+            #get x,y of iris centers
+            xc_right,yc_right,R_right = getiriscenter_ap(iris_right,ap_right)
+            #get x,y of MRD1 and MRD2 endpoints, and lengths of MRD1 and MRD2
+            x_mrd1_right, x_mrd2_right, mrd1_right, mrd2_right = getmrd1mrd2(xc_right,yc_right,iris_right+ap_right)
+            #get x,y of MCH and LCH
+            x_lch_right, y_lch_right, x_mch_right, y_mch_right = getmchlch(ap_right, False)
+            if not hiddenbrow_right:
+                #get x,y of brow at MCH and LCH
+                x_lbh_right, x_mbh_right, hiddenbrow_right = getbrowheight(x_lch_right,x_mch_right,y_lch_right,y_mch_right,brow_right,False)
+                lch_right =  x_lch_right - xc_right
+                lbh_right = xc_right - x_lbh_right
+                mch_right = x_mch_right - xc_right
+                mbh_right = xc_right - x_mbh_right
+            #get scleral show left and right
+            inf_ss_right,sup_ss_right = getscleralshow(xc_right,yc_right,iris_right,ap_right)
+        
+        if not hidden_left:
+            #get PFA
+            PFA_left = sum(sum(iris_left+ap_left))
+            #get x,y of iris centers
+            xc_left,yc_left,R_left = getiriscenter_ap(iris_left,ap_left)
+            #get x,y of MRD1 and MRD2 endpoints, and lengths of MRD1 and MRD2
+            x_mrd1_left, x_mrd2_left, mrd1_left, mrd2_left = getmrd1mrd2(xc_left,yc_left,iris_left+ap_left)
+            #get x,y of MCH and LCH
+            x_lch_left, y_lch_left, x_mch_left, y_mch_left = getmchlch(ap_left, True)
+            if not hiddenbrow_left:
+                #get x,y of brow at MCH and LCH
+                x_lbh_left, x_mbh_left, hiddenbrow_left = getbrowheight(x_lch_left,x_mch_left,y_lch_left,y_mch_left,brow_left,True)
+                lch_left =  x_lch_left - xc_left
+                lbh_left = xc_left - x_lbh_left
+                mch_left = x_mch_left - xc_left
+                mbh_left = xc_left - x_mbh_left
+            #get scleral show left and right
+            inf_ss_left,sup_ss_left = getscleralshow(xc_left,yc_left,iris_left,ap_left)
         
         
-        plt.text(9500+300+100,0,'OS', fontsize=36,fontweight="bold")
-                  
-        plt.text(9000+100, 300, 'MRD1',c=clr1, fontsize=font_size,fontweight="bold")
-        plt.text(9500+200+100, 300, '= ' + str(round(cf*mrd1_left,2)) + 'mm',c=clr1, fontsize=font_size,fontweight="bold")
-                  
-        plt.text(9000+100, 600, 'MRD2',c=clr2, fontsize=font_size,fontweight="bold")
-        plt.text(9500+200+100,600,'= ' + str(round(cf*mrd2_left,2)) + 'mm',c=clr2, fontsize=font_size,fontweight="bold")
-                  
-        if not hiddenbrow_left:
-            plt.text(8650+500+100, 900, 'LCH',c=clr2, fontsize=font_size,fontweight="bold")
-            plt.text(9000+500+200+100, 900, '= ' + str(round(cf*lch_left,2)) + 'mm',c=clr2, fontsize=font_size,fontweight="bold")
-                  
-            plt.text(8650+500+100, 1200, 'MCH',c=clr2, fontsize=font_size,fontweight="bold")
-            plt.text(9000+500+200+100, 1200, '= ' + str(round(cf*mch_left,2)) + 'mm',c=clr2, fontsize=font_size,fontweight="bold")
-                  
-            plt.text(8650+500+100, 1500, 'LBH',c=clr1, fontsize=font_size,fontweight="bold")
-            plt.text(9000+500+200+100, 1500, '= ' + str(round(cf*lbh_left,2)) + 'mm',c=clr1, fontsize=font_size,fontweight="bold")
-                  
-            plt.text(8650+500+100, 1800, 'MBH',c=clr1, fontsize=font_size,fontweight="bold")
-            plt.text(9000+500+200+100, 1800,'= ' + str(round(cf*mbh_left,2)) + 'mm',c=clr1, fontsize=font_size,fontweight="bold")
-                  
-            plt.text(8650+500+100, 2100, 'SSS',c=clr1, fontsize=font_size,fontweight="bold")
-            plt.text(9000+500+200+100, 2100, '= ' + str(round(cf*sup_ss_left,2)) + 'mm',c=clr1, fontsize=font_size,fontweight="bold")
-                  
-            plt.text(8650+500+100, 2400, 'ISS',c=clr2, fontsize=font_size,fontweight="bold")
-            plt.text(9000+500+200+100, 2400,'= ' + str(round(cf*inf_ss_left,2)) + 'mm',c=clr2, fontsize=font_size,fontweight="bold")
+        if not (hidden_left or hidden_right):
+            MID = y_mch_left+3000 - y_mch_right
+            LID = y_lch_left+3000 - y_lch_right
+        
+        #calculate conversion from pix to mm
+        if not (hidden_left or hidden_right):
+            cf = 11.71/(R_left+R_right)
+        elif hidden_left and not hidden_right:
+            cf = 11.71/(2*R_right)
+        elif hidden_right and not hidden_left:
+            cf = 11.71/(2*R_left)
+        
+        overlay = np.zeros(face.shape, face.dtype)
+        overlay[seg_arr==1] = (0, 0, 255)
+        overlay[seg_arr==2] = (0, 255, 0)
+        overlay[seg_arr==3] = (255, 0, 0)
+        img_overlay = cv2.addWeighted(overlay, .5, face, 1, 0)
+        cv2.imwrite(reportdir + '/' + str(subj) + '_segmentation.png',cv2.cvtColor(img_overlay, cv2.COLOR_BGR2RGB))
+        
+        #make report plot
+        lw = 3
+        font_size = 30
+        
+        plt.figure(figsize=(40,10))
+        plt.imshow(face)
+        
+        clr1 = [10/256,158/256,115/256]
+        clr2 = 'r' #[183/256,50/256,57/256]
+        clr3 =  [255/256,140/256,0/256]
+        clr4 = [86/256,180/256,233/256]
+        
+        if not (hidden_left or hidden_right):
+            #calculate reference line through two irises
+            m = (xc_left - xc_right)/(yc_left+3000 - yc_right)
+            b = xc_left - (m * (yc_left+3000))
+            y1 = 0
+            y2 = 6000
+            x1 = m*y1 + b
+            x2 = m*y2 + b
+            #plot reference lines
+            plt.plot([y1,y2],[x1,x2],c=clr4,linewidth=lw,linestyle='--')
+        elif hidden_left and not hidden_right:
+            plt.plot([y_lch_right,y_mch_right],[xc_right,xc_right],c=clr4,linewidth=lw,linestyle='--')
+        elif hidden_right and not hidden_left:
+            plt.plot([y_lch_left+3000,y_mch_left+3000],[xc_left,xc_left],c=clr4,linewidth=lw,linestyle='--')
+        
+        if not hidden_right:    
+            #plot mrd1 and mrd2 lines
+            plt.plot([yc_right,yc_right],[xc_right,x_mrd1_right],c=clr1,linewidth=lw)
+            plt.plot([yc_right,yc_right],[xc_right,x_mrd2_right],c=clr2,linewidth=lw)
+            if not hiddenbrow_right:
+                #plot MCH and LCH
+                plt.plot([y_mch_right, y_mch_right], [x_mch_right,xc_right],c=clr2,linewidth=lw)
+                plt.plot([y_lch_right, y_lch_right], [x_lch_right,xc_right],c=clr2,linewidth=lw)
+                #plot MBH and LBH
+                plt.plot([y_mch_right, y_mch_right], [xc_right,x_mbh_right],c=clr1,linewidth=lw)
+                plt.plot([y_lch_right, y_lch_right], [xc_right,x_lbh_right],c=clr1,linewidth=lw)
+            plt.text(7500+200,0,'OD', fontsize=36,fontweight="bold")
+                    
+            plt.text(7000, 300, 'MRD1',c=clr1, fontsize=font_size,fontweight="bold")
+            plt.text(7500+200, 300, '= ' + str(round(cf*mrd1_right,2)) + 'mm',c=clr1, fontsize=font_size,fontweight="bold")
+            plt.text(7000, 600, 'MRD2',c=clr2, fontsize=font_size,fontweight="bold")
+            plt.text(7500+200, 600,'= ' + str(round(cf*mrd2_right,2)) + 'mm',c=clr2, fontsize=font_size,fontweight="bold")
+            if not hiddenbrow_right:
+                plt.text(7150, 900, 'LCH',c=clr2, fontsize=font_size,fontweight="bold")
+                plt.text(7500+200, 900,'= ' + str(round(cf*lch_right,2)) + 'mm',c=clr2, fontsize=font_size,fontweight="bold")
+                    
+                plt.text(7150, 1200, 'MCH',c=clr2, fontsize=font_size,fontweight="bold")
+                plt.text(7500+200, 1200,'= ' + str(round(cf*mch_right,2)) + 'mm',c=clr2, fontsize=font_size,fontweight="bold")
+                    
+                plt.text(7150, 1500, 'LBH',c=clr1, fontsize=font_size,fontweight="bold")
+                plt.text(7500+200, 1500,'= ' + str(round(cf*lbh_right,2)) + 'mm',c=clr1, fontsize=font_size,fontweight="bold")
+                    
+                plt.text(7150, 1800, 'MBH',c=clr1, fontsize=font_size,fontweight="bold")
+                plt.text(7500+200, 1800,'= ' + str(round(cf*mbh_right,2)) + 'mm',c=clr1, fontsize=font_size,fontweight="bold")
+                    
+                plt.text(7150, 2100, 'SSS',c=clr1, fontsize=font_size,fontweight="bold")
+                plt.text(7500+200, 2100,'= ' + str(round(cf*sup_ss_right,2)) + 'mm',c=clr1, fontsize=font_size,fontweight="bold")
+                    
+                plt.text(7150, 2400, 'ISS',c=clr2, fontsize=font_size,fontweight="bold")
+                plt.text(7500+200, 2400,'= ' + str(round(cf*inf_ss_right,2)) + 'mm',c=clr2, fontsize=font_size,fontweight="bold")
+                    
+            
+        if not hidden_left:
+            #plot mrd1 and mrd2 lines
+            plt.plot([yc_left+3000,yc_left+3000],[xc_left,x_mrd1_left],c=clr1,linewidth=lw)
+            plt.plot([yc_left+3000,yc_left+3000],[xc_left,x_mrd2_left],c=clr2,linewidth=lw)
+            if not hiddenbrow_left:
+                #plot MCH and LCH
+                plt.plot([y_mch_left+3000, y_mch_left+3000], [x_mch_left,xc_left],c=clr2,linewidth=lw)
+                plt.plot([y_lch_left+3000, y_lch_left+3000], [x_lch_left,xc_left],c=clr2,linewidth=lw)    
+                #plot MBH and LBH
+                plt.plot([y_mch_left+3000, y_mch_left+3000], [xc_left,x_mbh_left],c=clr1,linewidth=lw)
+                plt.plot([y_lch_left+3000, y_lch_left+3000], [xc_left,x_lbh_left],c=clr1,linewidth=lw)
+            
+            
+            plt.text(9500+300+100,0,'OS', fontsize=36,fontweight="bold")
+                    
+            plt.text(9000+100, 300, 'MRD1',c=clr1, fontsize=font_size,fontweight="bold")
+            plt.text(9500+200+100, 300, '= ' + str(round(cf*mrd1_left,2)) + 'mm',c=clr1, fontsize=font_size,fontweight="bold")
+                    
+            plt.text(9000+100, 600, 'MRD2',c=clr2, fontsize=font_size,fontweight="bold")
+            plt.text(9500+200+100,600,'= ' + str(round(cf*mrd2_left,2)) + 'mm',c=clr2, fontsize=font_size,fontweight="bold")
+                    
+            if not hiddenbrow_left:
+                plt.text(8650+500+100, 900, 'LCH',c=clr2, fontsize=font_size,fontweight="bold")
+                plt.text(9000+500+200+100, 900, '= ' + str(round(cf*lch_left,2)) + 'mm',c=clr2, fontsize=font_size,fontweight="bold")
+                    
+                plt.text(8650+500+100, 1200, 'MCH',c=clr2, fontsize=font_size,fontweight="bold")
+                plt.text(9000+500+200+100, 1200, '= ' + str(round(cf*mch_left,2)) + 'mm',c=clr2, fontsize=font_size,fontweight="bold")
+                    
+                plt.text(8650+500+100, 1500, 'LBH',c=clr1, fontsize=font_size,fontweight="bold")
+                plt.text(9000+500+200+100, 1500, '= ' + str(round(cf*lbh_left,2)) + 'mm',c=clr1, fontsize=font_size,fontweight="bold")
+                    
+                plt.text(8650+500+100, 1800, 'MBH',c=clr1, fontsize=font_size,fontweight="bold")
+                plt.text(9000+500+200+100, 1800,'= ' + str(round(cf*mbh_left,2)) + 'mm',c=clr1, fontsize=font_size,fontweight="bold")
+                    
+                plt.text(8650+500+100, 2100, 'SSS',c=clr1, fontsize=font_size,fontweight="bold")
+                plt.text(9000+500+200+100, 2100, '= ' + str(round(cf*sup_ss_left,2)) + 'mm',c=clr1, fontsize=font_size,fontweight="bold")
+                    
+                plt.text(8650+500+100, 2400, 'ISS',c=clr2, fontsize=font_size,fontweight="bold")
+                plt.text(9000+500+200+100, 2400,'= ' + str(round(cf*inf_ss_left,2)) + 'mm',c=clr2, fontsize=font_size,fontweight="bold")
 
+            
         
-    
-    if not (hidden_left or hidden_right):
-        #plot MID and LID
-        plt.plot([y_mch_right, y_mch_left+3000], [x_mch_right,x_mch_left],c=clr3,linewidth=lw)
-        plt.plot([y_lch_right, y_lch_left+3000], [x_lch_right,x_lch_left],c=clr3,linewidth=lw)
-        plt.text(10500+1000+200,0,'OU', fontsize=36, fontweight="bold")
-                  
-        plt.text(10150+1000, 300, 'MID', c=clr3, fontsize=font_size,fontweight="bold")
-        plt.text(10500+1000+200, 300,'= ' + str(round(cf*MID,2))+ 'mm', c=clr3, fontsize=font_size,fontweight="bold")
-                  
-        plt.text(10150+1000, 600, 'LID', c=clr3, fontsize=font_size,fontweight="bold")
-        plt.text(10500+1000+200,600,'= ' + str(round(cf*LID,2)) + 'mm', c=clr3, fontsize=font_size,fontweight="bold")
-                  
-    
-    with open(rootdir + measure_filename,'a') as fout:
-        line = [subj,cf*mrd1_right,cf*mrd2_right,cf*lch_right,cf*mch_right,cf*lbh_right,cf*mbh_right,cf*mrd1_left,cf*mrd2_left,cf*lch_left,cf*mch_left,cf*lbh_left,cf*mbh_left,cf*MID,cf*LID]
-        line = [str(l) for l in line]
-        fout.write("%s\n" % ",".join(line))
-    plt.savefig(reportdir + '/' + str(subj) + '_report.png')
-    
-     
+        if not (hidden_left or hidden_right):
+            #plot MID and LID
+            plt.plot([y_mch_right, y_mch_left+3000], [x_mch_right,x_mch_left],c=clr3,linewidth=lw)
+            plt.plot([y_lch_right, y_lch_left+3000], [x_lch_right,x_lch_left],c=clr3,linewidth=lw)
+            plt.text(10500+1000+200,0,'OU', fontsize=36, fontweight="bold")
+                    
+            plt.text(10150+1000, 300, 'MID', c=clr3, fontsize=font_size,fontweight="bold")
+            plt.text(10500+1000+200, 300,'= ' + str(round(cf*MID,2))+ 'mm', c=clr3, fontsize=font_size,fontweight="bold")
+                    
+            plt.text(10150+1000, 600, 'LID', c=clr3, fontsize=font_size,fontweight="bold")
+            plt.text(10500+1000+200,600,'= ' + str(round(cf*LID,2)) + 'mm', c=clr3, fontsize=font_size,fontweight="bold")
+                    
+        
+        with open(rootdir + measure_filename,'a') as fout:
+            line = [subj,cf*mrd1_right,cf*mrd2_right,cf*lch_right,cf*mch_right,cf*lbh_right,cf*mbh_right,cf*mrd1_left,cf*mrd2_left,cf*lch_left,cf*mch_left,cf*lbh_left,cf*mbh_left,cf*MID,cf*LID]
+            line = [str(l) for l in line]
+            fout.write("%s\n" % ",".join(line))
+        plt.savefig(reportdir + '/' + str(subj) + '_report.png')
 
+    face_cropper.close()
+
+def visualize_landmarks(image_path: str, output_path: str = "landmarks_debug.jpg"):
+    """
+    Visualize MediaPipe landmarks on an image for debugging crop boundaries.
+    """
+    face_cropper = FaceCropper()
+    img = cv2.imread(image_path)
+    rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    
+    results = face_cropper.face_mesh.process(rgb_img)
+    
+    if results.multi_face_landmarks:
+        landmarks = results.multi_face_landmarks[0].landmark
+        h, w = img.shape[:2]
+        
+        # Draw all landmarks
+        for idx, landmark in enumerate(landmarks):
+            x = int(landmark.x * w)
+            y = int(landmark.y * h)
+            cv2.circle(img, (x, y), 2, (0, 255, 0), -1)
+        
+        # Draw crop boundaries
+        top, bottom, left, right = face_cropper.calculate_crop_boundaries(landmarks, img.shape)
+        cv2.rectangle(img, (left, top), (right, bottom), (255, 0, 0), 3)
+        
+        # Draw key landmarks in different colors
+        # Upper lip - red
+        for idx in face_cropper.upper_lip_top:
+            if idx < len(landmarks):
+                x = int(landmarks[idx].x * w)
+                y = int(landmarks[idx].y * h)
+                cv2.circle(img, (x, y), 4, (0, 0, 255), -1)
+        
+        # Forehead - blue
+        for idx in face_cropper.forehead_top:
+            if idx < len(landmarks):
+                x = int(landmarks[idx].x * w)
+                y = int(landmarks[idx].y * h)
+                cv2.circle(img, (x, y), 4, (255, 0, 0), -1)
+        
+        cv2.imwrite(output_path, img)
+        print(f"Landmark visualization saved to {output_path}")
+    
+    face_cropper.close()
+
+if __name__ == "__main__":
+    integrate_with_existing_pipeline()
