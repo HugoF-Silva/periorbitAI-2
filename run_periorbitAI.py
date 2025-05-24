@@ -11,8 +11,9 @@ import math
 import skimage
 import math
 from typing import Optional, Tuple
-from face_cropper import FaceCropper
+from face_cropper import FaceCropperCompatible
 import skimage.feature
+from huggingface_hub import hf_hub_download
 
 def cleanupiris(iris):
     #return iris with only the biggest cluster
@@ -283,7 +284,7 @@ def getscleralshow(xc,yc,iris,ap):
     return inf_ss,sup_ss
 
 # Integration function for your existing pipeline
-def preprocess_with_mediapipe(image_path: str, face_cropper: FaceCropper) -> Optional[np.ndarray]:
+def preprocess_with_mediapipe(image_path: str, face_cropper: FaceCropperCompatible) -> Optional[np.ndarray]:
     """
     Preprocess an image file using MediaPipe for dynamic face cropping.
     
@@ -309,7 +310,7 @@ def preprocess_with_mediapipe(image_path: str, face_cropper: FaceCropper) -> Opt
     
     # Convert to RGB for your model
     processed_rgb = cv2.cvtColor(processed, cv2.COLOR_BGR2RGB)
-    
+
     return processed_rgb
 
 
@@ -337,7 +338,14 @@ def integrate_with_existing_pipeline():
         line = ['subj','right_MRD1','right_MRD2','right_LCH','right_MCH','right_LBH','right_MBH','left_MRD1','left_MRD2','left_LCH','left_MCH','left_LBH','left_MBH','MID','LID']
         fout.write("%s\n" % ",".join(line))
 
-    face_cropper = FaceCropper()
+    model_path = hf_hub_download(
+        repo_id    = "ManyOtherFunctions/face-parse-bisent",
+        filename   = "79999_iter.pth",
+        repo_type  = "model"
+    )
+
+    # face_cropper = FaceCropper(model_path)
+    face_cropper = FaceCropperCompatible(model_path)
 
     image_files = [f for f in glob.glob(imagedir + '/*') if os.path.splitext(f)[1].lower() in ['.jpg', '.jpeg']]
     
@@ -353,8 +361,8 @@ def integrate_with_existing_pipeline():
             continue
         
         # NEW: Use MediaPipe to preprocess any size image to 4000x6000
-        img = face_cropper.process_image(img_original)
-        
+        # img = face_cropper.process_image(img_original)
+        img = face_cropper.process_image_compatible(img_original, face_size_ratio=0.6)
         if img is None:
             print(f'skipping {subj} - face detection failed')
             continue
@@ -585,7 +593,7 @@ def visualize_landmarks(image_path: str, output_path: str = "landmarks_debug.jpg
     """
     Visualize MediaPipe landmarks on an image for debugging crop boundaries.
     """
-    face_cropper = FaceCropper()
+    face_cropper = FaceCropperCompatible()
     img = cv2.imread(image_path)
     rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     

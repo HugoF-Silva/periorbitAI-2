@@ -6,8 +6,10 @@ In this repo you will find a python script (run_periorbitAI.py) to segment a col
 It takes two inputs a root directory name and a directory name containing all photographs:
 
 ```
-python run_periorbitAI.py <root_directory> <name_of_photo_dir_inside_root>
+python run_periorbitAI.py <root_directory> <dir_with_photos_to_process>
 ```
+
+<dir_with_photos_to_process> must be inside <root_directory>
   
 Example:
 
@@ -60,6 +62,12 @@ pip install scipy==1.4.1 scikit-image==0.16.2 numpy==1.18.1 imutils==0.5.3 psd-t
 sudo apt install -y libgl1-mesa-glx libglib2.0-0
 ```
 
+```
+git clone https://github.com/zllrunning/face-parsing.PyTorch.git
+cd face-parsing.PyTorch
+pip install -r requirements.txt
+```
+
 ---
 
 #### Donwloading the repo
@@ -74,7 +82,7 @@ Due to the size of the segmentation model (>100MB) this repo has to be downloade
 7.  You should now be able to run from within the code repo: 
 
 ```
-  python run_periorbitAI.py <root_directory> <name_of_photo_dir_inside_root>
+  python run_periorbitAI.py <root_directory> <dir_with_photos_to_process>
 ```
 
 # Additional context

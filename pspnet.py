@@ -403,8 +403,8 @@ class PSPFeats(nn.Module):
                 in the backbone with regular convs and dilate later convolutions to compensate; see
                 related argument in torchvision.models"""
         super().__init__()
-        if backbone not in models.resnet.model_urls:
-            raise ValueError('Only ResNet-style backbones supported for PSPNet; see torchvision.models.resnet')
+        # if backbone not in models.resnet.model_urls:
+            # raise ValueError('Only ResNet-style backbones supported for PSPNet; see torchvision.models.resnet')
         # self.backbone will belong to the ResNet class;
         # see https://pytorch.org/docs/stable/_modules/torchvision/models/resnet.html
         self.backbone = getattr(models, backbone)(replace_stride_with_dilation=replace_stride_with_dilation)
