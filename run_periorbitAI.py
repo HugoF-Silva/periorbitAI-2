@@ -11,7 +11,7 @@ import math
 import skimage
 import math
 from typing import Optional, Tuple
-from face_cropper import FaceCropperCompatible
+from face_cropper import AspectRatioFaceCropper
 import skimage.feature
 from huggingface_hub import hf_hub_download
 
@@ -284,7 +284,7 @@ def getscleralshow(xc,yc,iris,ap):
     return inf_ss,sup_ss
 
 # Integration function for your existing pipeline
-def preprocess_with_mediapipe(image_path: str, face_cropper: FaceCropperCompatible) -> Optional[np.ndarray]:
+def preprocess_with_mediapipe(image_path: str, face_cropper: AspectRatioFaceCropper) -> Optional[np.ndarray]:
     """
     Preprocess an image file using MediaPipe for dynamic face cropping.
     
@@ -345,7 +345,7 @@ def integrate_with_existing_pipeline():
     )
 
     # face_cropper = FaceCropper(model_path)
-    face_cropper = FaceCropperCompatible(model_path)
+    face_cropper = AspectRatioFaceCropper(model_path)
 
     image_files = [f for f in glob.glob(imagedir + '/*') if os.path.splitext(f)[1].lower() in ['.jpg', '.jpeg']]
     
@@ -362,7 +362,7 @@ def integrate_with_existing_pipeline():
         
         # NEW: Use MediaPipe to preprocess any size image to 4000x6000
         # img = face_cropper.process_image(img_original)
-        img = face_cropper.process_image_compatible(img_original, face_size_ratio=0.6)
+        img = face_cropper.process_image(img_original, debug=True)
         if img is None:
             print(f'skipping {subj} - face detection failed')
             continue
@@ -593,7 +593,7 @@ def visualize_landmarks(image_path: str, output_path: str = "landmarks_debug.jpg
     """
     Visualize MediaPipe landmarks on an image for debugging crop boundaries.
     """
-    face_cropper = FaceCropperCompatible()
+    face_cropper = AspectRatioFaceCropper()
     img = cv2.imread(image_path)
     rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     
