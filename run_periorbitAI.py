@@ -362,7 +362,7 @@ def integrate_with_existing_pipeline():
         
         # NEW: Use MediaPipe to preprocess any size image to 4000x6000
         # img = face_cropper.process_image(img_original)
-        img = face_cropper.process_image(img_original, debug=True)
+        img = face_cropper.process_image(img_original, debug=False)
         if img is None:
             print(f'skipping {subj} - face detection failed')
             continue

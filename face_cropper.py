@@ -39,7 +39,7 @@ class AspectRatioFaceCropper:
         self.parsing_model = self._load_parsing_model(parsing_model_path)
         
         # Landmark indices
-        self.upper_lip_indices = [61, 146, 91, 181, 84, 17, 78, 95, 88, 178, 87, 14]
+        self.upper_lip_indices = [13, 269, 272]
         self.left_eye_outer = 33
         self.right_eye_outer = 263
     
@@ -69,142 +69,6 @@ class AspectRatioFaceCropper:
         
         return parsing
     
-    # def get_hairline_y(self, img: np.ndarray, face_center_x: int) -> Tuple[Optional[int], bool]:
-    #     """
-    #     Get hairline Y coordinate at face center X.
-    #     Returns: (y_coordinate, success_flag)
-    #     """
-    #     h, w = img.shape[:2]
-        
-    #     try:
-    #         parsing_map = self.parse_face(img)
-    #         hair_mask = (parsing_map == 17).astype(np.uint8)  # 17 = hair
-            
-    #         # Resize to original dimensions
-    #         hair_full = cv2.resize(hair_mask, (w, h), interpolation=cv2.INTER_NEAREST)
-            
-    #         # Get hairline at face center
-    #         face_center_x = min(w-1, max(0, int(face_center_x)))
-    #         column = hair_full[:, face_center_x]
-    #         ys = np.where(column)[0]
-            
-    #         if len(ys) > 0:
-    #             return int(ys.min()), True
-    #         else:
-    #             return None, False
-    #     except Exception as e:
-    #         print(f"Hairline detection failed: {e}")
-    #         return None, False
-
-    def get_hairline_y_enhanced(self, img: np.ndarray, face_center_x: int) -> Tuple[Optional[int], bool]:
-        """
-        Enhanced hairline detection that finds the actual hair-forehead boundary.
-        Uses multiple methods to ensure robust detection.
-        """
-        h, w = img.shape[:2]
-        
-        try:
-            parsing_map = self.parse_face(img)
-            
-            # Get relevant masks
-            hair_mask = (parsing_map == 17).astype(np.uint8)  # 17 = hair
-            skin_mask = (parsing_map == 1).astype(np.uint8)   # 1 = skin/face
-            forehead_mask = (parsing_map == 10).astype(np.uint8)  # 10 = forehead (if available)
-            
-            # Combine skin and forehead for better detection
-            face_skin_mask = np.maximum(skin_mask, forehead_mask)
-            
-            # Resize to original dimensions
-            hair_full = cv2.resize(hair_mask, (w, h), interpolation=cv2.INTER_NEAREST)
-            face_skin_full = cv2.resize(face_skin_mask, (w, h), interpolation=cv2.INTER_NEAREST)
-            
-            # Ensure face_center_x is valid
-            face_center_x = min(w-1, max(0, int(face_center_x)))
-            
-            # Method 1: Find skin-to-hair transition in a window around face center
-            window_size = 50  # Look in a 50-pixel window
-            x_start = max(0, face_center_x - window_size)
-            x_end = min(w, face_center_x + window_size)
-            
-            best_hairline_y = None
-            max_confidence = 0
-            
-            for x in range(x_start, x_end, 5):  # Check every 5 pixels
-                # Scan from top to find transition
-                for y in range(h - 1):
-                    # Check if we're transitioning from skin/forehead to hair
-                    if (face_skin_full[y, x] == 1 and hair_full[y + 1, x] == 1):
-                        # Verify this is a substantial transition (not noise)
-                        # Check if there's more hair below
-                        hair_below = np.sum(hair_full[y+1:min(y+30, h), x])
-                        skin_above = np.sum(face_skin_full[max(0, y-20):y, x])
-                        
-                        confidence = (hair_below + skin_above) / 50.0
-                        
-                        if confidence > max_confidence:
-                            max_confidence = confidence
-                            best_hairline_y = y + 1  # The first hair pixel
-            
-            # Method 2: If method 1 fails, use edge detection on hair mask
-            if best_hairline_y is None:
-                # Apply morphological operations to clean up the mask
-                kernel = np.ones((5, 5), np.uint8)
-                hair_cleaned = cv2.morphologyEx(hair_full, cv2.MORPH_CLOSE, kernel)
-                hair_cleaned = cv2.morphologyEx(hair_cleaned, cv2.MORPH_OPEN, kernel)
-                
-                # Find edges
-                edges = cv2.Canny(hair_cleaned * 255, 50, 150)
-                
-                # Look for horizontal edge near face center
-                edge_column = edges[:, face_center_x]
-                edge_indices = np.where(edge_column > 0)[0]
-                
-                if len(edge_indices) > 0:
-                    # Find the topmost substantial edge
-                    for y in edge_indices:
-                        # Check if this edge represents a hairline (hair below, no hair above)
-                        if (np.sum(hair_cleaned[y:min(y+20, h), face_center_x]) >= 15 and
-                            np.sum(hair_cleaned[max(0, y-20):y, face_center_x]) <= 5):
-                            best_hairline_y = y
-                            break
-            
-            # Method 3: Statistical approach - find where hair density increases
-            if best_hairline_y is None:
-                # Calculate hair density in horizontal strips
-                strip_height = 10
-                densities = []
-                
-                for y in range(0, h - strip_height, 5):
-                    strip = hair_full[y:y+strip_height, max(0, face_center_x-25):min(w, face_center_x+25)]
-                    density = np.mean(strip)
-                    densities.append((y, density))
-                
-                # Find where density significantly increases
-                for i in range(1, len(densities)):
-                    if densities[i][1] > 0.3 and densities[i][1] > densities[i-1][1] * 2:
-                        best_hairline_y = densities[i][0]
-                        break
-            
-            if best_hairline_y is not None:
-                return int(best_hairline_y), True
-            else:
-                return None, False
-                
-        except Exception as e:
-            print(f"Enhanced hairline detection failed: {e}")
-            return None, False
-    
-    def get_upper_lip_y(self, landmarks, h: int) -> Tuple[Optional[int], bool]:
-        """
-        Get upper lip Y coordinate.
-        Returns: (y_coordinate, success_flag)
-        """
-        try:
-            ys = [landmarks[i].y * h for i in self.upper_lip_indices]
-            return int(min(ys)), True
-        except:
-            return None, False
-    
     def get_two_finger_margin(self, landmarks, w: int, h: int, finger_factor: float = 0.4) -> int:
         """Calculate margin based on inter-ocular distance."""
         try:
@@ -216,6 +80,63 @@ class AspectRatioFaceCropper:
             # Fallback to 10% of image width
             return int(w * 0.1)
     
+    def get_hairline_y(self, img: np.ndarray, face_center_x: int) -> Tuple[Optional[int], bool]:
+        """
+        Get hairline Y coordinate at face center X.
+        Returns the *lowest* hair pixel (max y) in that column, not the highest.
+        """
+        h, w = img.shape[:2]
+        
+        try:
+            parsing_map = self.parse_face(img)
+            hair_mask = (parsing_map == 17).astype(np.uint8)  # 17 = hair
+            
+            # Resize to original dimensions
+            hair_full = cv2.resize(hair_mask, (w, h), interpolation=cv2.INTER_NEAREST)
+            
+            # Clamp face_center_x into image bounds
+            x = min(w - 1, max(0, int(face_center_x)))
+            column = hair_full[:, x]
+            ys = np.where(column)[0]
+            
+            if len(ys) > 0:
+                # <-- here we pick the *lowest* hair pixel
+                return int(ys.max()), True
+            else:
+                return None, False
+        except Exception as e:
+            print(f"Hairline detection failed: {e}")
+            return None, False
+
+    def get_upper_lip_y(self, landmarks, h: int) -> Tuple[Optional[int], bool]:
+        """
+        Get upper lip Y coordinate - uses outer upper edge only.
+        Returns: (y_coordinate, success_flag)
+        """
+        try:
+            # Use upper lip top edge landmarks (outer contour)
+            # These are the landmarks that form the upper boundary of the upper lip
+            # upper_edge_indices = [13, 312, 311, 310, 415, 308, 324, 318, 14, 87, 178, 88, 95]
+            upper_edge_indices = [13, 269, 272]
+            
+            ys = []
+            for idx in upper_edge_indices:
+                if idx < len(landmarks):
+                    ys.append(landmarks[idx].y * h)
+            
+            if ys:
+                # Get the minimum y (topmost point) of upper lip outer edge
+                return int(min(ys)), True
+            else:
+                # Fallback to original indices if new ones fail
+                ys = [landmarks[i].y * h for i in self.upper_lip_indices if i < len(landmarks)]
+                if ys:
+                    return int(min(ys)), True
+                return None, False
+        except Exception as e:
+            print(f"Upper lip detection failed: {e}")
+            return None, False
+        
     def process_image(self, img: np.ndarray, debug: bool = False) -> Optional[np.ndarray]:
         """
         Process image with aspect ratio constraints and boundary rules.
