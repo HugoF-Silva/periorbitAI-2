@@ -1,9 +1,10 @@
 {
-  "name": "vision-app",
-  "version": "0.1.0",
+  "name": "periorbital-ai",
+  "version": "1.0.0",
+  "description": "Face detection and periorbital analysis app",
   "private": true,
   "scripts": {
-    "build": "mkdir -p build && cp index.html build/",
+    "build": "echo 'No build needed - static HTML'",
     "start": "echo 'Static site ready'"
   }
 }
