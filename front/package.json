@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "echo 'No build needed for static HTML'",
+    "build": "mkdir -p build && cp index.html build/",
     "start": "echo 'Static site ready'"
   }
 }
