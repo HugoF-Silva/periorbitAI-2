@@ -20,6 +20,13 @@
       user-select: none;
     }
     #root { height: 100vh; }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .animate-spin {
+      animation: spin 1s linear infinite;
+    }
   </style>
 </head>
 <body>
@@ -69,6 +76,12 @@
       </svg>
     );
 
+    const Loader2 = ({ className = "" }) => (
+      <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+      </svg>
+    );
+
     const App = () => {
       const [currentView, setCurrentView] = useState('gallery');
       const [photos, setPhotos] = useState([]);
@@ -76,21 +89,66 @@
       const [isCapturing, setIsCapturing] = useState(false);
       const [expandedPhoto, setExpandedPhoto] = useState(null);
       const [showMenu, setShowMenu] = useState(false);
+      const [isCameraReady, setIsCameraReady] = useState(false);
       const detectionInterval = useRef(null);
+      const videoRef = useRef(null);
+      const streamRef = useRef(null);
 
-      // Simulate face detection
+      const videoRef = useRef(null);
+      const streamRef = useRef(null);
+
+      // Open real camera and start face detection
       useEffect(() => {
         if (currentView === 'camera') {
-          detectionInterval.current = setInterval(() => {
-            setIsFaceDetected(Math.random() > 0.3);
-          }, 500);
+          setIsCameraReady(false);
+          // Open camera
+          const startCamera = async () => {
+            try {
+              const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                  facingMode: 'user',
+                  width: { ideal: 1280 },
+                  height: { ideal: 720 }
+                },
+                audio: false
+              });
+              
+              streamRef.current = stream;
+              if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                videoRef.current.onloadedmetadata = () => {
+                  setIsCameraReady(true);
+                };
+              }
+              
+              // Start face detection simulation
+              detectionInterval.current = setInterval(() => {
+                setIsFaceDetected(Math.random() > 0.3);
+              }, 500);
+            } catch (err) {
+              console.error('Camera access denied:', err);
+              alert('Please allow camera access to use this feature');
+              setCurrentView('gallery');
+            }
+          };
+          
+          startCamera();
         } else {
+          // Stop camera and detection
+          setIsCameraReady(false);
+          if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+          }
           if (detectionInterval.current) {
             clearInterval(detectionInterval.current);
           }
         }
 
         return () => {
+          if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+          }
           if (detectionInterval.current) {
             clearInterval(detectionInterval.current);
           }
@@ -100,10 +158,23 @@
       const capturePhoto = async () => {
         setIsCapturing(true);
         
+        // Create canvas to capture photo from video
+        const video = videoRef.current;
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const context = canvas.getContext('2d');
+        
+        // Draw current video frame to canvas
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        // Convert to data URL
+        const imageDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        
         setTimeout(() => {
           const newPhoto = {
             id: Date.now(),
-            url: `https://via.placeholder.com/400x600/2a2a2a/ffffff?text=Face+${photos.length + 1}`,
+            url: imageDataUrl, // Real captured photo
             description: `Analysis ${photos.length + 1}: Healthy periorbital region detected. No signs of puffiness or dark circles. Skin elasticity appears normal. Hydration level: Good.`,
             timestamp: new Date().toISOString()
           };
@@ -179,7 +250,20 @@
             {/* Camera Button */}
             <div className="absolute bottom-8 right-6">
               <button
-                onClick={() => setCurrentView('camera')}
+                onClick={async () => {
+                  // Check camera permissions first
+                  try {
+                    const permissionStatus = await navigator.permissions.query({ name: 'camera' });
+                    if (permissionStatus.state === 'denied') {
+                      alert('Camera access is blocked. Please enable it in your browser settings.');
+                      return;
+                    }
+                    setCurrentView('camera');
+                  } catch {
+                    // Permissions API not supported, try anyway
+                    setCurrentView('camera');
+                  }
+                }}
                 className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-95"
               >
                 <Camera className="w-8 h-8 text-black" />
@@ -274,28 +358,45 @@
 
           {/* Camera View */}
           <div className="absolute inset-0">
-            <div className="w-full h-full bg-gradient-to-b from-gray-900 to-gray-800">
-              {/* Simulated camera feed animation */}
-              <div className="absolute inset-0 opacity-10">
-                <div className="h-full w-full bg-gradient-to-b from-transparent via-white to-transparent animate-pulse"></div>
-              </div>
+            <div className="w-full h-full bg-black">
+              {/* Real camera video */}
+              <video
+                ref={videoRef}
+                className="w-full h-full object-cover"
+                autoPlay
+                playsInline
+                muted
+                style={{ transform: 'scaleX(-1)' }} // Mirror for selfie camera
+              />
               
-              {/* Face detection frame */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className={`w-64 h-80 border-2 ${isFaceDetected ? 'border-green-400' : 'border-red-400'} rounded-3xl transition-all duration-300`}>
-                  <div className="absolute -top-8 left-1/2 transform -translate-x-1/2">
-                    <p className="text-sm bg-black/50 px-3 py-1 rounded-full backdrop-blur-sm whitespace-nowrap">
-                      {isFaceDetected ? 'Face detected' : 'Position face here'}
-                    </p>
+              {/* Loading indicator */}
+              {!isCameraReady && (
+                <div className="absolute inset-0 bg-black flex items-center justify-center">
+                  <div className="text-center">
+                    <Loader2 className="w-8 h-8 animate-spin text-white mx-auto mb-2" />
+                    <p className="text-gray-400 text-sm">Opening camera...</p>
                   </div>
-                  
-                  {/* Corner markers */}
-                  <div className={`absolute -top-1 -left-1 w-8 h-8 border-t-2 border-l-2 ${isFaceDetected ? 'border-green-400' : 'border-red-400'} rounded-tl-xl transition-colors duration-300`}></div>
-                  <div className={`absolute -top-1 -right-1 w-8 h-8 border-t-2 border-r-2 ${isFaceDetected ? 'border-green-400' : 'border-red-400'} rounded-tr-xl transition-colors duration-300`}></div>
-                  <div className={`absolute -bottom-1 -left-1 w-8 h-8 border-b-2 border-l-2 ${isFaceDetected ? 'border-green-400' : 'border-red-400'} rounded-bl-xl transition-colors duration-300`}></div>
-                  <div className={`absolute -bottom-1 -right-1 w-8 h-8 border-b-2 border-r-2 ${isFaceDetected ? 'border-green-400' : 'border-red-400'} rounded-br-xl transition-colors duration-300`}></div>
                 </div>
-              </div>
+              )}
+              
+              {/* Face detection frame overlay */}
+              {isCameraReady && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className={`w-64 h-80 border-2 ${isFaceDetected ? 'border-green-400' : 'border-red-400'} rounded-3xl transition-all duration-300`}>
+                    <div className="absolute -top-8 left-1/2 transform -translate-x-1/2">
+                      <p className="text-sm bg-black/50 px-3 py-1 rounded-full backdrop-blur-sm whitespace-nowrap">
+                        {isFaceDetected ? 'Face detected' : 'Position face here'}
+                      </p>
+                    </div>
+                    
+                    {/* Corner markers */}
+                    <div className={`absolute -top-1 -left-1 w-8 h-8 border-t-2 border-l-2 ${isFaceDetected ? 'border-green-400' : 'border-red-400'} rounded-tl-xl transition-colors duration-300`}></div>
+                    <div className={`absolute -top-1 -right-1 w-8 h-8 border-t-2 border-r-2 ${isFaceDetected ? 'border-green-400' : 'border-red-400'} rounded-tr-xl transition-colors duration-300`}></div>
+                    <div className={`absolute -bottom-1 -left-1 w-8 h-8 border-b-2 border-l-2 ${isFaceDetected ? 'border-green-400' : 'border-red-400'} rounded-bl-xl transition-colors duration-300`}></div>
+                    <div className={`absolute -bottom-1 -right-1 w-8 h-8 border-b-2 border-r-2 ${isFaceDetected ? 'border-green-400' : 'border-red-400'} rounded-br-xl transition-colors duration-300`}></div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

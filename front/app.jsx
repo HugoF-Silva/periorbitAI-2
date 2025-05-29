@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, ArrowLeft, MoreVertical, Share2, Trash2 } from 'lucide-react';
+import { Camera, ArrowLeft, MoreVertical, Share2, Trash2, Loader2 } from 'lucide-react';
 
 const App = () => {
   const [currentView, setCurrentView] = useState('gallery');
@@ -8,26 +8,62 @@ const App = () => {
   const [isCapturing, setIsCapturing] = useState(false);
   const [expandedPhoto, setExpandedPhoto] = useState(null);
   const [showMenu, setShowMenu] = useState(false);
+  const [isCameraReady, setIsCameraReady] = useState(false);
   const videoRef = useRef(null);
-  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
   const detectionInterval = useRef(null);
 
-  // Simulate face detection
+  // Open real camera and start face detection
   useEffect(() => {
     if (currentView === 'camera') {
-      // Start face detection simulation
-      detectionInterval.current = setInterval(() => {
-        // Randomly detect face (in real app, this would be actual detection)
-        setIsFaceDetected(Math.random() > 0.3);
-      }, 500);
+      setIsCameraReady(false);
+      const startCamera = async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { 
+              facingMode: 'user',
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            },
+            audio: false
+          });
+          
+          streamRef.current = stream;
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            videoRef.current.onloadedmetadata = () => {
+              setIsCameraReady(true);
+            };
+          }
+          
+          // Start face detection simulation
+          detectionInterval.current = setInterval(() => {
+            setIsFaceDetected(Math.random() > 0.3);
+          }, 500);
+        } catch (err) {
+          console.error('Camera access denied:', err);
+          alert('Please allow camera access to use this feature');
+          setCurrentView('gallery');
+        }
+      };
+      
+      startCamera();
     } else {
-      // Clear interval when not in camera view
+      // Stop camera and detection
+      setIsCameraReady(false);
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
       if (detectionInterval.current) {
         clearInterval(detectionInterval.current);
       }
     }
 
     return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
       if (detectionInterval.current) {
         clearInterval(detectionInterval.current);
       }
@@ -37,13 +73,26 @@ const App = () => {
   const capturePhoto = async () => {
     setIsCapturing(true);
     
-    // Simulate flash
+    // Create canvas to capture photo from video
+    const video = videoRef.current;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext('2d');
+    
+    // Flip horizontally for selfie (since video is mirrored)
+    context.translate(canvas.width, 0);
+    context.scale(-1, 1);
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // Convert to data URL
+    const imageDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    
     setTimeout(() => {
-      // Simulate photo capture and backend processing
       const newPhoto = {
         id: Date.now(),
-        url: `https://via.placeholder.com/400x600/1a1a1a/ffffff?text=Face+${photos.length + 1}`,
-        description: `Analysis: Healthy skin detected. Hydration level: Good. Detected features: Clear complexion, even skin tone.`,
+        url: imageDataUrl, // Real captured photo
+        description: `Analysis ${photos.length + 1}: Healthy periorbital region detected. No signs of puffiness or dark circles. Skin elasticity appears normal. Hydration level: Good.`,
         timestamp: new Date().toISOString()
       };
       
@@ -121,7 +170,20 @@ const App = () => {
         {/* Camera Button */}
         <div className="absolute bottom-8 right-6">
           <button
-            onClick={() => setCurrentView('camera')}
+            onClick={async () => {
+              // Check camera permissions first
+              try {
+                const permissionStatus = await navigator.permissions.query({ name: 'camera' });
+                if (permissionStatus.state === 'denied') {
+                  alert('Camera access is blocked. Please enable it in your browser settings.');
+                  return;
+                }
+                setCurrentView('camera');
+              } catch {
+                // Permissions API not supported, try anyway
+                setCurrentView('camera');
+              }
+            }}
             className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg"
           >
             <Camera className="w-8 h-8 text-black" />
@@ -216,26 +278,39 @@ const App = () => {
 
       {/* Camera View */}
       <div className="absolute inset-0">
-        {/* Simulated camera feed */}
-        <div className="w-full h-full bg-gray-900">
+        <div className="w-full h-full bg-black">
+          {/* Real camera video */}
           <video
             ref={videoRef}
             className="w-full h-full object-cover"
             autoPlay
             playsInline
             muted
+            style={{ transform: 'scaleX(-1)' }} // Mirror for selfie camera
           />
           
-          {/* Face detection indicator */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className={`w-64 h-80 border-2 ${isFaceDetected ? 'border-green-400' : 'border-red-400'} rounded-3xl transition-colors duration-300`}>
-              <div className="absolute top-4 left-1/2 transform -translate-x-1/2">
-                <p className="text-sm bg-black/50 px-3 py-1 rounded-full backdrop-blur-sm">
-                  {isFaceDetected ? 'Face detected' : 'Position face here'}
-                </p>
+          {/* Loading indicator */}
+          {!isCameraReady && (
+            <div className="absolute inset-0 bg-black flex items-center justify-center">
+              <div className="text-center">
+                <Loader2 className="w-8 h-8 animate-spin text-white mx-auto mb-2" />
+                <p className="text-gray-400 text-sm">Opening camera...</p>
               </div>
             </div>
-          </div>
+          )}
+          
+          {/* Face detection frame overlay */}
+          {isCameraReady && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className={`w-64 h-80 border-2 ${isFaceDetected ? 'border-green-400' : 'border-red-400'} rounded-3xl transition-colors duration-300`}>
+                <div className="absolute top-4 left-1/2 transform -translate-x-1/2">
+                  <p className="text-sm bg-black/50 px-3 py-1 rounded-full backdrop-blur-sm">
+                    {isFaceDetected ? 'Face detected' : 'Position face here'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
